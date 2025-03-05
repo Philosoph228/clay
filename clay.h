@@ -661,6 +661,7 @@ typedef struct {
     // Note: the render command array is already sorted in ascending order, and will produce correct results if drawn in naive order.
     // This field is intended for use in batching renderers for improved performance.
     int16_t zIndex;
+    int16_t treeDepth;
     // Specifies how to handle rendering of this command.
     // CLAY_RENDER_COMMAND_TYPE_RECTANGLE - The renderer should draw a solid color rectangle.
     // CLAY_RENDER_COMMAND_TYPE_BORDER - The renderer should draw a colored border inset into the bounding box.
@@ -1162,6 +1163,7 @@ typedef struct {
     Clay_LayoutElement *layoutElement;
     Clay_Vector2 position;
     Clay_Vector2 nextChildOffset;
+    uint16_t treeDepth;
 } Clay__LayoutElementTreeNode;
 
 CLAY__ARRAY_DEFINE(Clay__LayoutElementTreeNode, Clay__LayoutElementTreeNodeArray)
@@ -2623,6 +2625,7 @@ void Clay__CalculateFinalLayout(void) {
                         .boundingBox = currentElementBoundingBox,
                         .userData = sharedConfig->userData,
                         .id = currentElement->id,
+                        .treeDepth = currentElementTreeNode->treeDepth,
                     };
 
                     bool offscreen = Clay__ElementIsOffscreen(&currentElementBoundingBox);
@@ -2695,6 +2698,7 @@ void Clay__CalculateFinalLayout(void) {
                                     .userData = sharedConfig->userData,
                                     .id = Clay__HashNumber(lineIndex, currentElement->id).id,
                                     .zIndex = root->zIndex,
+                                    .treeDepth = currentElementTreeNode->treeDepth,
                                     .commandType = CLAY_RENDER_COMMAND_TYPE_TEXT,
                                 });
                                 yPosition += finalLineHeight;
@@ -2739,6 +2743,7 @@ void Clay__CalculateFinalLayout(void) {
                         .userData = sharedConfig->userData,
                         .id = currentElement->id,
                         .zIndex = root->zIndex,
+                        .treeDepth = currentElementTreeNode->treeDepth,
                         .commandType = CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
                     });
                 }
@@ -2817,6 +2822,7 @@ void Clay__CalculateFinalLayout(void) {
                                 }},
                                 .userData = sharedConfig->userData,
                                 .id = Clay__HashNumber(currentElement->id, currentElement->childrenOrTextContent.children.length).id,
+                                .treeDepth = currentElementTreeNode->treeDepth,
                                 .commandType = CLAY_RENDER_COMMAND_TYPE_BORDER,
                         };
                         Clay__AddRenderCommand(renderCommand);
@@ -2834,6 +2840,7 @@ void Clay__CalculateFinalLayout(void) {
                                             } },
                                             .userData = sharedConfig->userData,
                                             .id = Clay__HashNumber(currentElement->id, currentElement->childrenOrTextContent.children.length + 1 + i).id,
+                                            .treeDepth = currentElementTreeNode->treeDepth,
                                             .commandType = CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
                                         });
                                     }
@@ -2850,6 +2857,7 @@ void Clay__CalculateFinalLayout(void) {
                                             } },
                                             .userData = sharedConfig->userData,
                                             .id = Clay__HashNumber(currentElement->id, currentElement->childrenOrTextContent.children.length + 1 + i).id,
+                                            .treeDepth = currentElementTreeNode->treeDepth,
                                             .commandType = CLAY_RENDER_COMMAND_TYPE_RECTANGLE,
                                         });
                                     }
@@ -2906,6 +2914,7 @@ void Clay__CalculateFinalLayout(void) {
                         .layoutElement = childElement,
                         .position = { childPosition.x, childPosition.y },
                         .nextChildOffset = { .x = (float)childElement->layoutConfig->padding.left, .y = (float)childElement->layoutConfig->padding.top },
+                        .treeDepth = currentElementTreeNode->treeDepth + 1
                     };
                     context->treeNodeVisited.internalArray[newNodeIndex] = false;
 
