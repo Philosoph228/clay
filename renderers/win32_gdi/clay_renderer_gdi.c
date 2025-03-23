@@ -5,7 +5,7 @@ HDC renderer_hdcMem = {0};
 HBITMAP renderer_hbmMem = {0};
 HANDLE renderer_hOld = {0};
 
-void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands)
+void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR* fonts)
 {
     bool is_clipping = false;
     HRGN clipping_region = {0};
@@ -38,9 +38,12 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands)
         {
         case CLAY_RENDER_COMMAND_TYPE_TEXT:
         {
-            Clay_Color c = renderCommand->renderData.text.textColor;
+            Clay_TextRenderData* textData = &renderCommand->renderData.text;
+            Clay_Color c = textData->textColor;
             SetTextColor(renderer_hdcMem, RGB(c.r, c.g, c.b));
             SetBkMode(renderer_hdcMem, TRANSPARENT);
+			HFONT font = CreateFontA(textData->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, CLEARTYPE_QUALITY, DEFAULT_PITCH, fonts[textData->fontId]);
+			SelectObject(renderer_hdcMem, font);
 
             RECT r = rc;
             r.left = boundingBox.x;
@@ -51,7 +54,8 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands)
             DrawTextA(renderer_hdcMem, renderCommand->renderData.text.stringContents.chars,
                       renderCommand->renderData.text.stringContents.length,
                       &r, DT_TOP | DT_LEFT);
-
+			DeleteObject(font);
+			
             break;
         }
         case CLAY_RENDER_COMMAND_TYPE_RECTANGLE:
@@ -201,7 +205,7 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands)
 }
 
 /*
-    Hacks due to the windows api not making sence to use.... may measure too large, but never too small
+    Hacks due to the Windows API not making sense to use.... may measure too large, but never too small
 */
 
 #ifndef WIN32_FONT_HEIGHT
@@ -216,9 +220,15 @@ static inline Clay_Dimensions Clay_Win32_MeasureText(Clay_StringSlice text, Clay
 {
     Clay_Dimensions textSize = {0};
 
+    HDC fontDC = CreateCompatibleDC(NULL);
+    LPCSTR* fonts = userData;
+    HFONT font = CreateFontA(config->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, CLEARTYPE_QUALITY, DEFAULT_PITCH, fonts[config->fontId]);
+    SelectObject(fontDC, font);
+
     float maxTextWidth = 0.0f;
     float lineTextWidth = 0;
-    float textHeight = WIN32_FONT_HEIGHT;
+    float textHeight = config->fontSize;
+    ABC abcWidth;
 
     for (int i = 0; i < text.length; ++i)
     {
@@ -229,7 +239,10 @@ static inline Clay_Dimensions Clay_Win32_MeasureText(Clay_StringSlice text, Clay
             continue;
         }
 
-        lineTextWidth += WIN32_FONT_WIDTH;
+        if (!GetCharABCWidthsA(fontDC, text.chars[i], text.chars[i], &abcWidth))
+            lineTextWidth += WIN32_FONT_WIDTH;
+        else
+            lineTextWidth += abcWidth.abcA + abcWidth.abcB + abcWidth.abcC;
     }
 
     maxTextWidth = fmax(maxTextWidth, lineTextWidth);
@@ -237,5 +250,7 @@ static inline Clay_Dimensions Clay_Win32_MeasureText(Clay_StringSlice text, Clay
     textSize.width = maxTextWidth;
     textSize.height = textHeight;
 
+    DeleteObject(font);
+    DeleteDC(fontDC);
     return textSize;
 }
