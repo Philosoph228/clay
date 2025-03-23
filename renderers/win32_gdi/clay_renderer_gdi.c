@@ -42,7 +42,7 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
             Clay_Color c = textData->textColor;
             SetTextColor(renderer_hdcMem, RGB(c.r, c.g, c.b));
             SetBkMode(renderer_hdcMem, TRANSPARENT);
-			HFONT font = CreateFontA(textData->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, CLEARTYPE_QUALITY, DEFAULT_PITCH, fonts[textData->fontId]);
+			HFONT font = CreateFontA(textData->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, DEFAULT_QUALITY, DEFAULT_PITCH, fonts[textData->fontId]);
 			SelectObject(renderer_hdcMem, font);
 
             RECT r = rc;
@@ -222,7 +222,7 @@ static inline Clay_Dimensions Clay_Win32_MeasureText(Clay_StringSlice text, Clay
 
     HDC fontDC = CreateCompatibleDC(NULL);
     LPCSTR* fonts = userData;
-    HFONT font = CreateFontA(config->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, CLEARTYPE_QUALITY, DEFAULT_PITCH, fonts[config->fontId]);
+    HFONT font = CreateFontA(config->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, DEFAULT_QUALITY, DEFAULT_PITCH, fonts[config->fontId]);
     SelectObject(fontDC, font);
 
     float maxTextWidth = 0.0f;
