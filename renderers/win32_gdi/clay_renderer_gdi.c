@@ -182,11 +182,23 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
             break;
         }
 
-            // case CLAY_RENDER_COMMAND_TYPE_IMAGE:
-            // {
-            //     // TODO: i couldnt get the win 32 api to load a bitmap.... So im punting on this one :(
-            //     break;
-            // }
+        case CLAY_RENDER_COMMAND_TYPE_IMAGE:
+        {
+            // PLACEHOLDER: Loads a black rectangle instead of an image.
+            RECT r = rc;
+
+            r.left = boundingBox.x;
+            r.top = boundingBox.y;
+            r.right = boundingBox.x + boundingBox.width;
+            r.bottom = boundingBox.y + boundingBox.height;
+
+            HBRUSH recColor = CreateSolidBrush(RGB(0, 0, 0));
+
+            FillRect(renderer_hdcMem, &r, recColor);
+
+            DeleteObject(recColor);
+            break;
+        }
 
         default:
             printf("Unhandled render command %d\r\n", renderCommand->commandType);
