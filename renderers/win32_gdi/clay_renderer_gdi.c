@@ -161,21 +161,41 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
             }
             else
             {
-                // todo: i should be rounded
-                MoveToEx(renderer_hdcMem, r.left, r.top, NULL);
-                LineTo(renderer_hdcMem, r.right, r.top);
+                // TODO: Clean up this mess so it's readable
 
-                SelectObject(renderer_hdcMem, leftPen);
-                MoveToEx(renderer_hdcMem, r.left, r.top, NULL);
-                LineTo(renderer_hdcMem, r.left, r.bottom);
+                RECT arcRC_TL = { r.left, r.top, r.left + 2 * brd.cornerRadius.topLeft, r.top + 2 * brd.cornerRadius.topLeft };
+                RECT arcRC_TR = { r.right - 2 * brd.cornerRadius.topRight, r.top, r.right, r.top + 2 * brd.cornerRadius.topRight };
+                RECT arcRC_BL = { r.left, r.bottom - 2 * brd.cornerRadius.bottomLeft, r.left + 2 * brd.cornerRadius.topLeft, r.bottom };
+                RECT arcRC_BR = { r.right - 2 * brd.cornerRadius.bottomLeft, r.bottom - 2 * brd.cornerRadius.bottomLeft, r.right, r.bottom };
 
-                SelectObject(renderer_hdcMem, bottomPen);
-                MoveToEx(renderer_hdcMem, r.left, r.bottom, NULL);
-                LineTo(renderer_hdcMem, r.right, r.bottom);
+                SetArcDirection(renderer_hdcMem, AD_CLOCKWISE);
+                Arc(renderer_hdcMem, arcRC_TL.left, arcRC_TL.top, arcRC_TL.right, arcRC_TL.bottom, 
+                    arcRC_TL.left, (arcRC_TL.top + arcRC_TL.bottom) / 2, (arcRC_TL.left + arcRC_TL.right) / 2, arcRC_TL.top);
+
+                MoveToEx(renderer_hdcMem, (arcRC_TL.left + arcRC_TL.right) / 2, r.top, NULL);
+                LineTo(renderer_hdcMem, (arcRC_TR.left + arcRC_TR.right) / 2, r.top);
 
                 SelectObject(renderer_hdcMem, rightPen);
-                MoveToEx(renderer_hdcMem, r.right, r.top, NULL);
-                LineTo(renderer_hdcMem, r.right, r.bottom);
+                Arc(renderer_hdcMem, arcRC_TR.left, arcRC_TR.top, arcRC_TR.right, arcRC_TR.bottom,
+                    (arcRC_TR.left + arcRC_TR.right) / 2, arcRC_TR.top, arcRC_TR.right, (arcRC_TR.top + arcRC_TR.bottom) / 2);
+
+                MoveToEx(renderer_hdcMem, r.right, (arcRC_TR.top + arcRC_TR.bottom) / 2, NULL);
+                LineTo(renderer_hdcMem, r.right, (arcRC_BR.top + arcRC_BR.bottom) / 2);
+
+                SelectObject(renderer_hdcMem, leftPen);
+                SetArcDirection(renderer_hdcMem, AD_COUNTERCLOCKWISE);
+                Arc(renderer_hdcMem, arcRC_BL.left, arcRC_BL.top, arcRC_BL.right, arcRC_BL.bottom,
+                    arcRC_BL.left, (arcRC_BL.top + arcRC_BL.bottom) / 2, (arcRC_BL.left + arcRC_BL.right) / 2, arcRC_BL.bottom);
+
+                MoveToEx(renderer_hdcMem, r.left, (arcRC_TL.top + arcRC_TL.bottom) / 2, NULL);
+                LineTo(renderer_hdcMem, r.left, (arcRC_BL.top + arcRC_BL.bottom) / 2);
+
+                SelectObject(renderer_hdcMem, bottomPen);
+                Arc(renderer_hdcMem, arcRC_BR.left, arcRC_BR.top, arcRC_BR.right, arcRC_BR.bottom,
+                    (arcRC_BR.left + arcRC_BR.right) / 2, arcRC_BR.bottom, arcRC_BR.right, (arcRC_BR.top + arcRC_BR.bottom) / 2);
+
+                MoveToEx(renderer_hdcMem, (arcRC_BL.left + arcRC_BL.right) / 2, r.bottom, NULL);
+                LineTo(renderer_hdcMem, (arcRC_BR.left + arcRC_BR.right) / 2, r.bottom);
                 
             }
 
