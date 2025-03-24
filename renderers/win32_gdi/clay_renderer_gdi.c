@@ -129,10 +129,10 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
             r.right = boundingBox.x + boundingBox.width;
             r.bottom = boundingBox.y + boundingBox.height;
 
-            HPEN topPen = CreatePen(PS_SOLID, brd.width.top, RGB(brd.color.r, brd.color.g, brd.color.b));
-            HPEN leftPen = CreatePen(PS_SOLID, brd.width.left, RGB(brd.color.r, brd.color.g, brd.color.b));
-            HPEN bottomPen = CreatePen(PS_SOLID, brd.width.bottom, RGB(brd.color.r, brd.color.g, brd.color.b));
-            HPEN rightPen = CreatePen(PS_SOLID, brd.width.right, RGB(brd.color.r, brd.color.g, brd.color.b));
+            HPEN topPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.top, RGB(brd.color.r, brd.color.g, brd.color.b));
+            HPEN leftPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.left, RGB(brd.color.r, brd.color.g, brd.color.b));
+            HPEN bottomPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.bottom, RGB(brd.color.r, brd.color.g, brd.color.b));
+            HPEN rightPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.right, RGB(brd.color.r, brd.color.g, brd.color.b));
 
             HPEN oldPen = SelectObject(renderer_hdcMem, topPen);
 
