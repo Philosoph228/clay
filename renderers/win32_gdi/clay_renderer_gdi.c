@@ -132,7 +132,7 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
             LOGBRUSH penAttributes = {
                 BS_SOLID,
                 RGB(brd.color.r, brd.color.g, brd.color.b),
-                NULL
+                (ULONG_PTR)0
             };
             
             HPEN topPen = ExtCreatePen(PS_SOLID | PS_ENDCAP_FLAT | PS_GEOMETRIC, brd.width.top, &penAttributes, 0, NULL);
@@ -144,20 +144,20 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
 
             if (brd.cornerRadius.topLeft == 0)
             {
-                MoveToEx(renderer_hdcMem, r.left, r.top, NULL);
-                LineTo(renderer_hdcMem, r.right, r.top);
+                MoveToEx(renderer_hdcMem, r.left - 0.5f * brd.width.left, r.top, NULL);
+                LineTo(renderer_hdcMem, r.right + 0.5f * brd.width.right, r.top);
 
                 SelectObject(renderer_hdcMem, leftPen);
-                MoveToEx(renderer_hdcMem, r.left, r.top, NULL);
-                LineTo(renderer_hdcMem, r.left, r.bottom);
+                MoveToEx(renderer_hdcMem, r.left, r.top - 0.5f * brd.width.top, NULL);
+                LineTo(renderer_hdcMem, r.left, r.bottom + 0.5f * brd.width.bottom);
 
                 SelectObject(renderer_hdcMem, bottomPen);
-                MoveToEx(renderer_hdcMem, r.left, r.bottom, NULL);
-                LineTo(renderer_hdcMem, r.right, r.bottom);
+                MoveToEx(renderer_hdcMem, r.left - 0.5f * brd.width.left, r.bottom, NULL);
+                LineTo(renderer_hdcMem, r.right + 0.5f * brd.width.right, r.bottom);
 
                 SelectObject(renderer_hdcMem, rightPen);
-                MoveToEx(renderer_hdcMem, r.right, r.top, NULL);
-                LineTo(renderer_hdcMem, r.right, r.bottom);
+                MoveToEx(renderer_hdcMem, r.right, r.top + 0.5f * brd.width.top, NULL);
+                LineTo(renderer_hdcMem, r.right, r.bottom + 0.5f * brd.width.bottom);
             }
             else
             {
