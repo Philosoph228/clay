@@ -129,10 +129,16 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
             r.right = boundingBox.x + boundingBox.width;
             r.bottom = boundingBox.y + boundingBox.height;
 
-            HPEN topPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.top, RGB(brd.color.r, brd.color.g, brd.color.b));
-            HPEN leftPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.left, RGB(brd.color.r, brd.color.g, brd.color.b));
-            HPEN bottomPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.bottom, RGB(brd.color.r, brd.color.g, brd.color.b));
-            HPEN rightPen = CreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.right, RGB(brd.color.r, brd.color.g, brd.color.b));
+            LOGBRUSH penAttributes = {
+                BS_SOLID,
+                RGB(brd.color.r, brd.color.g, brd.color.b),
+                NULL
+            };
+            
+            HPEN topPen = ExtCreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.top, &penAttributes, 0, NULL);
+            HPEN leftPen = ExtCreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.left, &penAttributes, 0, NULL);
+            HPEN bottomPen = ExtCreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.bottom, &penAttributes, 0, NULL);
+            HPEN rightPen = ExtCreatePen(PS_SOLID | PS_ENDCAP_FLAT, brd.width.right, &penAttributes, 0, NULL);
 
             HPEN oldPen = SelectObject(renderer_hdcMem, topPen);
 
