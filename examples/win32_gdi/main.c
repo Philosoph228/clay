@@ -25,7 +25,7 @@ void CenterWindow(HWND hWnd);
 
 long lastMsgTime = 0;
 bool ui_debug_mode;
-HFONT fonts[1];
+void* fonts[1];
 
 #define RECTWIDTH(rc)   ((rc).right - (rc).left)
 #define RECTHEIGHT(rc)  ((rc).bottom - (rc).top)
@@ -157,8 +157,25 @@ int APIENTRY WinMain(
     Clay_Initialize(clayMemory, (Clay_Dimensions){.width = 800, .height = 600}, (Clay_ErrorHandler){HandleClayErrors}); // This final argument is new since the video was published
 
     // Initialize clay fonts and text drawing
-    fonts[FONT_ID_BODY_16] = Clay_Win32_SimpleCreateFont("resources/Roboto-Regular.ttf", "Roboto", -11, FW_NORMAL);
-    Clay_SetMeasureTextFunction(Clay_Win32_MeasureText, fonts);
+    Clay_Win32_SetFontResourceMode(FONT_RESOURCE_STRING);
+
+    switch (g_fontResourceMode)
+    {
+    case FONT_RESOURCE_HFONT: {
+        HFONT* font_handles = fonts;
+        font_handles[FONT_ID_BODY_16] = Clay_Win32_SimpleCreateFont("resources/Roboto-Regular.ttf", "Roboto", -11, FW_NORMAL);
+        break;
+    }
+    case FONT_RESOURCE_STRING: {
+        PCSTR* font_strings = fonts;
+        AddFontResourceEx("resources\\Roboto-Regular.ttf", FR_PRIVATE, 0);
+
+        font_strings[FONT_ID_BODY_16] = "Roboto";
+        break;
+    }
+    }
+
+    Clay_SetMeasureTextFunction(Clay_Win32_MeasureText, fonts); 
 
     ZeroMemory(&wc, sizeof wc);
     wc.hInstance = hInstance;
