@@ -344,19 +344,20 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
 
         case CLAY_RENDER_COMMAND_TYPE_IMAGE:
         {
-            // PLACEHOLDER: Loads a black rectangle instead of an image.
-            RECT r = rc;
+            Clay_ImageRenderData ird = renderCommand->renderData.image;
+            HBITMAP img = *(HBITMAP*)ird.imageData;
+            HDC imgDC = CreateCompatibleDC(renderer_hdcMem);
+            SelectObject(imgDC, img);
+            BITMAP imgdata;
 
-            r.left = boundingBox.x;
-            r.top = boundingBox.y;
-            r.right = boundingBox.x + boundingBox.width;
-            r.bottom = boundingBox.y + boundingBox.height;
+            GetObject(img, sizeof(BITMAP), &imgdata);
 
-            HBRUSH recColor = CreateSolidBrush(RGB(0, 0, 0));
+            // In this case, setting the StretchBltMode to COLORONCOLOR massively improves performance at the cost of image quality.
+            SetStretchBltMode(renderer_hdcMem, HALFTONE);
+            StretchBlt(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height, imgDC, 0, 0, imgdata.bmWidth, imgdata.bmHeight, SRCCOPY);
 
-            FillRect(renderer_hdcMem, &r, recColor);
+            DeleteDC(imgDC);
 
-            DeleteObject(recColor);
             break;
         }
 
