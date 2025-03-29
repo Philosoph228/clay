@@ -91,7 +91,7 @@ BOOL DrawTransparentRgn(HDC hdc, RECT rc, HRGN rgn, Clay_Color color, uint8_t op
     return rv;
 }
 
-void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR* fonts)
+void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LOGFONT* fonts)
 {
     bool is_clipping = false;
     HRGN clipping_region = {0};
@@ -128,7 +128,8 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LPCSTR
             Clay_Color c = textData->textColor;
             SetTextColor(renderer_hdcMem, RGB(c.r, c.g, c.b));
             SetBkMode(renderer_hdcMem, TRANSPARENT);
-			HFONT font = CreateFontA(textData->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, DEFAULT_QUALITY, DEFAULT_PITCH, fonts[textData->fontId]);
+            fonts[textData->fontId].lfHeight = textData->fontSize;
+            HFONT font = CreateFontIndirectA(&fonts[textData->fontId]);
 			SelectObject(renderer_hdcMem, font);
 
             RECT r = rc;
@@ -394,8 +395,9 @@ static inline Clay_Dimensions Clay_Win32_MeasureText(Clay_StringSlice text, Clay
     Clay_Dimensions textSize = {0};
 
     HDC fontDC = CreateCompatibleDC(NULL);
-    LPCSTR* fonts = userData;
-    HFONT font = CreateFontA(config->fontSize, 0, 0, 0, 0, false, false, false, ANSI_CHARSET, 0, 0, DEFAULT_QUALITY, DEFAULT_PITCH, fonts[config->fontId]);
+    LOGFONT* fonts = userData;
+    fonts[config->fontId].lfHeight = config->fontSize;
+    HFONT font = CreateFontIndirectA(&fonts[config->fontId]);
     SelectObject(fontDC, font);
 
     float maxTextWidth = 0.0f;

@@ -25,7 +25,7 @@ void CenterWindow(HWND hWnd);
 
 long lastMsgTime = 0;
 bool ui_debug_mode;
-LPCSTR fonts[1];
+LOGFONT fonts[1];
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -153,7 +153,10 @@ int APIENTRY WinMain(
     Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(clayRequiredMemory, malloc(clayRequiredMemory));
     Clay_Initialize(clayMemory, (Clay_Dimensions){.width = 800, .height = 600}, (Clay_ErrorHandler){HandleClayErrors}); // This final argument is new since the video was published
     AddFontResourceEx("resources\\Roboto-Regular.ttf", FR_PRIVATE, 0);
-    fonts[FONT_ID_BODY_16] = "Roboto";
+    LOGFONT lfRoboto = {
+        0, 0, 0, 0, FW_NORMAL, false, false, false, ANSI_CHARSET, 0, 0, DEFAULT_QUALITY, DEFAULT_PITCH, "Roboto"
+    };
+    fonts[FONT_ID_BODY_16] = lfRoboto;
     Clay_SetMeasureTextFunction(Clay_Win32_MeasureText, fonts); 
 
     ZeroMemory(&wc, sizeof wc);
