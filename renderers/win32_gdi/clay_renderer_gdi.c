@@ -91,6 +91,48 @@ BOOL DrawTransparentRgn(HDC hdc, RECT rc, HRGN rgn, Clay_Color color, uint8_t op
     return rv;
 }
 
+void DrawBmp(HDC hdc, int x, int y, int width, int height, HBITMAP hBitmap) {
+    HDC srcDC = CreateCompatibleDC(hdc);
+    HDC destDC = CreateCompatibleDC(hdc);
+    SelectObject(srcDC, hBitmap);
+
+    BITMAP imgdata;
+    GetObject(hBitmap, sizeof(BITMAP), &imgdata);
+
+    BITMAPINFO bmi = { 0 };
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = height;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pBits;
+    HBITMAP hScaledBitmap = CreateDIBSection(destDC, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    SelectObject(destDC, hScaledBitmap);
+
+    // COLORONCOLOR is used here because it massively improves performance over HALFTONE, while simultaneously not destroying the alpha channel.
+    // The drawback is that image quality is not as great, but at least I don't have to mess with more DIB sections.
+    SetStretchBltMode(destDC, COLORONCOLOR);
+    StretchBlt(destDC, 0, 0, width, height, srcDC, 0, 0, imgdata.bmWidth, imgdata.bmHeight, SRCCOPY);
+    
+    // Premultiply the alpha.
+    // This would be better for perfomance if done by the developer during the full-scale bitmap's loading, rather than for every image on every render.
+    uint8_t* pixel = (uint8_t*)pBits;
+    for (int i = 0; i < width * height * 4; i += 4) {
+        pixel[i] = pixel[i] * ((float)pixel[i + 3] / 255.f);
+        pixel[i + 1] = pixel[i + 1] * ((float)pixel[i + 3] / 255.f);
+        pixel[i + 2] = pixel[i + 2] * ((float)pixel[i + 3] / 255.f);
+    }
+
+    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    AlphaBlend(hdc, x, y, width, height, destDC, 0, 0, width, height, blend);
+
+    DeleteObject(hScaledBitmap);
+    DeleteDC(srcDC);
+    DeleteDC(destDC);
+}
+
 void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LOGFONT* fonts)
 {
     bool is_clipping = false;
@@ -347,17 +389,8 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, LOGFON
         {
             Clay_ImageRenderData ird = renderCommand->renderData.image;
             HBITMAP img = *(HBITMAP*)ird.imageData;
-            HDC imgDC = CreateCompatibleDC(renderer_hdcMem);
-            SelectObject(imgDC, img);
-            BITMAP imgdata;
 
-            GetObject(img, sizeof(BITMAP), &imgdata);
-
-            // In this case, setting the StretchBltMode to COLORONCOLOR massively improves performance at the cost of image quality.
-            SetStretchBltMode(renderer_hdcMem, HALFTONE);
-            StretchBlt(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height, imgDC, 0, 0, imgdata.bmWidth, imgdata.bmHeight, SRCCOPY);
-
-            DeleteDC(imgDC);
+            DrawBmp(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height, img);
 
             break;
         }
