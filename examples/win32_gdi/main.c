@@ -26,6 +26,7 @@ void CenterWindow(HWND hWnd);
 long lastMsgTime = 0;
 bool ui_debug_mode;
 void* fonts[1];
+LOGFONT logfonts[1];
 
 #define RECTWIDTH(rc)   ((rc).right - (rc).left)
 #define RECTHEIGHT(rc)  ((rc).bottom - (rc).top)
@@ -117,7 +118,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_PAINT:
     {
         Clay_RenderCommandArray renderCommands = ClayVideoDemo_CreateLayout(&demo_data);
-        Clay_Win32_Render(hwnd, renderCommands, fonts);
+        Clay_Win32_Render(hwnd, renderCommands, g_fontResourceMode == FONT_RESOURCE_LOGFONT ? logfonts : fonts);
         break;
     }
 
@@ -157,7 +158,7 @@ int APIENTRY WinMain(
     Clay_Initialize(clayMemory, (Clay_Dimensions){.width = 800, .height = 600}, (Clay_ErrorHandler){HandleClayErrors}); // This final argument is new since the video was published
 
     // Initialize clay fonts and text drawing
-    Clay_Win32_SetFontResourceMode(FONT_RESOURCE_STRING);
+    Clay_Win32_SetFontResourceMode(FONT_RESOURCE_LOGFONT);
 
     switch (g_fontResourceMode)
     {
@@ -173,9 +174,18 @@ int APIENTRY WinMain(
         font_strings[FONT_ID_BODY_16] = "Roboto";
         break;
     }
+    case FONT_RESOURCE_LOGFONT: {
+        AddFontResourceEx("resources\\Roboto-Regular.ttf", FR_PRIVATE, 0);
+        LOGFONT lfRoboto = {
+            0, 0, 0, 0, FW_NORMAL, false, false, false, ANSI_CHARSET, 0, 0, DEFAULT_QUALITY, DEFAULT_PITCH, "Roboto"
+        };
+        logfonts[FONT_ID_BODY_16] = lfRoboto;
+        break;
+    }
     }
 
-    Clay_SetMeasureTextFunction(Clay_Win32_MeasureText, fonts); 
+    Clay_SetMeasureTextFunction(Clay_Win32_MeasureText, g_fontResourceMode == FONT_RESOURCE_LOGFONT ? logfonts : fonts);
+    
 
     ZeroMemory(&wc, sizeof wc);
     wc.hInstance = hInstance;

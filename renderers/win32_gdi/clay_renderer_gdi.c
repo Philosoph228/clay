@@ -264,6 +264,7 @@ static void __Clay_Win32_FillRoundRect(HDC hdc, PRECT prc, Clay_Color color, Cla
 
 #define FONT_RESOURCE_HFONT     0x01
 #define FONT_RESOURCE_STRING    0x02
+#define FONT_RESOURCE_LOGFONT   0x03
 
 DWORD g_alphaBlendStretchMode;
 DWORD g_fontResourceMode;
@@ -373,7 +374,6 @@ BOOL DrawTransparentRect(HDC hdc, RECT rc, HBRUSH brush, uint8_t opacity)
     bmi.bmiHeader.biCompression = BI_RGB;
     bmi.bmiHeader.biSizeImage = (rc.right - rc.left) * (rc.bottom - rc.top) * 4;
 
-    // REVIEW: Does CreateDIBSection requires hdc?
     bmp = CreateDIBSection(tempHdc, &bmi, DIB_RGB_COLORS, NULL, NULL, 0x0);
     SelectObject(tempHdc, bmp);
 
@@ -442,6 +442,48 @@ BOOL DrawTransparentRgn(HDC hdc, RECT rc, HRGN rgn, Clay_Color color, uint8_t op
     return rv;
 }
 
+void DrawBmp(HDC hdc, int x, int y, int width, int height, HBITMAP hBitmap) {
+    HDC srcDC = CreateCompatibleDC(hdc);
+    HDC destDC = CreateCompatibleDC(hdc);
+    SelectObject(srcDC, hBitmap);
+
+    BITMAP imgdata;
+    GetObject(hBitmap, sizeof(BITMAP), &imgdata);
+
+    BITMAPINFO bmi = { 0 };
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = height;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* pBits;
+    HBITMAP hScaledBitmap = CreateDIBSection(destDC, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    SelectObject(destDC, hScaledBitmap);
+
+    // COLORONCOLOR is used here because it massively improves performance over HALFTONE, while simultaneously not destroying the alpha channel.
+    // The drawback is that image quality is not as great, but at least I don't have to mess with more DIB sections.
+    SetStretchBltMode(destDC, COLORONCOLOR);
+    StretchBlt(destDC, 0, 0, width, height, srcDC, 0, 0, imgdata.bmWidth, imgdata.bmHeight, SRCCOPY);
+    
+    // Premultiply the alpha.
+    // This would be better for perfomance if done by the developer during the full-scale bitmap's loading, rather than for every image on every render.
+    uint8_t* pixel = (uint8_t*)pBits;
+    for (int i = 0; i < width * height * 4; i += 4) {
+        pixel[i] = pixel[i] * ((float)pixel[i + 3] / 255.f);
+        pixel[i + 1] = pixel[i + 1] * ((float)pixel[i + 3] / 255.f);
+        pixel[i + 2] = pixel[i + 2] * ((float)pixel[i + 3] / 255.f);
+    }
+
+    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+    AlphaBlend_impl(hdc, x, y, width, height, destDC, 0, 0, width, height, blend);
+
+    DeleteObject(hScaledBitmap);
+    DeleteDC(srcDC);
+    DeleteDC(destDC);
+}
+
 void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* fonts)
 {
     bool is_clipping = false;
@@ -479,7 +521,6 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
             Clay_Color c = textData->textColor;
             SetTextColor(renderer_hdcMem, RGB(c.r, c.g, c.b));
             SetBkMode(renderer_hdcMem, TRANSPARENT);
-
             HFONT hFont;
             switch (g_fontResourceMode)
             {
@@ -495,6 +536,12 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
             case FONT_RESOURCE_HFONT: {
                 const HFONT* font_handles = fonts;
                 hFont = font_handles[textData->fontId];
+                break;
+            }
+            case FONT_RESOURCE_LOGFONT: {
+                LOGFONT* logfonts = fonts;
+                logfonts[textData->fontId].lfHeight = textData->fontSize;
+                hFont = CreateFontIndirectA(&logfonts[textData->fontId]);
                 break;
             }
             }
@@ -514,7 +561,7 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
 
             SelectObject(renderer_hdcMem, hPrevFont);
 
-            if (g_fontResourceMode == FONT_RESOURCE_STRING)
+            if (g_fontResourceMode == FONT_RESOURCE_STRING || g_fontResourceMode == FONT_RESOURCE_LOGFONT)
             {
                 DeleteObject(hFont);
                 hFont = NULL;
@@ -740,19 +787,11 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
 
         case CLAY_RENDER_COMMAND_TYPE_IMAGE:
         {
-            // PLACEHOLDER: Loads a black rectangle instead of an image.
-            RECT r = rc;
+            Clay_ImageRenderData ird = renderCommand->renderData.image;
+            HBITMAP img = *(HBITMAP*)ird.imageData;
 
-            r.left = boundingBox.x;
-            r.top = boundingBox.y;
-            r.right = boundingBox.x + boundingBox.width;
-            r.bottom = boundingBox.y + boundingBox.height;
+            DrawBmp(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height, img);
 
-            HBRUSH recColor = CreateSolidBrush(RGB(0, 0, 0));
-
-            FillRect(renderer_hdcMem, &r, recColor);
-
-            DeleteObject(recColor);
             break;
         }
 
@@ -804,6 +843,13 @@ static inline Clay_Dimensions Clay_Win32_MeasureText(Clay_StringSlice text, Clay
             HFONT* font_handles = userData;
             hFont = font_handles[config->fontId];
         }
+        else if (g_fontResourceMode == FONT_RESOURCE_LOGFONT)
+        {
+            HDC fontDC = CreateCompatibleDC(NULL);
+            LOGFONT* logfonts = userData;
+            logfonts[config->fontId].lfHeight = config->fontSize;
+            hFont = CreateFontIndirectA(&logfonts[config->fontId]);
+        }
 
         if (hFont != NULL)
         {
@@ -814,6 +860,7 @@ static inline Clay_Dimensions Clay_Win32_MeasureText(Clay_StringSlice text, Clay
             {
                 SIZE size;
                 GetTextExtentPoint32(fontDC, text.chars, text.length, &size);
+
 
                 textSize.width = size.cx;
                 textSize.height = size.cy;
