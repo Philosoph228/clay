@@ -136,7 +136,7 @@ static inline void Clay__SuppressUnusedLatchDefinitionVariableWarning(void) { (v
     for (                                                                                                                                                   \
         CLAY__ELEMENT_DEFINITION_LATCH = (Clay__OpenElement(), Clay__ConfigureOpenElement(CLAY__CONFIG_WRAPPER(Clay_ElementDeclaration, __VA_ARGS__)), 0);  \
         CLAY__ELEMENT_DEFINITION_LATCH < 1;                                                                                                                 \
-        ++CLAY__ELEMENT_DEFINITION_LATCH, Clay__CloseElement()                                                                                              \
+        CLAY__ELEMENT_DEFINITION_LATCH=1, Clay__CloseElement()                                                                                              \
     )
 
 // These macros exist to allow the CLAY() macro to be called both with an inline struct definition, such as
@@ -1373,7 +1373,7 @@ uint64_t Clay__HashData(const uint8_t* data, size_t length) {
             length -= 16;
         }
         else {
-            for (int i = 0; i < length; i++) {
+            for (size_t i = 0; i < length; i++) {
                 overflowBuffer[i] = data[i];
             }
             msg = _mm_loadu_si128((const __m128i*)overflowBuffer);
@@ -1399,13 +1399,9 @@ uint64_t Clay__HashData(const uint8_t* data, size_t length) {
     return result[0] ^ result[1];
 }
 #elif !defined(CLAY_DISABLE_SIMD) && defined(__aarch64__)
-static inline uint64x2_t Clay__SIMDRotateLeft(uint64x2_t x, int r) {
-    return vorrq_u64(vshlq_n_u64(x, 17), vshrq_n_u64(x, 64 - 17));
-}
-
 static inline void Clay__SIMDARXMix(uint64x2_t* a, uint64x2_t* b) {
     *a = vaddq_u64(*a, *b);
-    *b = veorq_u64(Clay__SIMDRotateLeft(*b, 17), *a);
+    *b = veorq_u64(vorrq_u64(vshlq_n_u64(*b, 17), vshrq_n_u64(*b, 64 - 17)), *a);
 }
 
 uint64_t Clay__HashData(const uint8_t* data, size_t length) {
@@ -1430,11 +1426,11 @@ uint64_t Clay__HashData(const uint8_t* data, size_t length) {
             length -= 8;
         }
         else {
-            for (int i = 0; i < length; i++) {
+            for (size_t i = 0; i < length; i++) {
                 overflowBuffer[i] = data[i];
             }
             uint8x8_t lower = vld1_u8(overflowBuffer);
-            msg = vcombine_u8(lower, vdup_n_u8(0));
+            msg = vreinterpretq_u64_u8(vcombine_u8(lower, vdup_n_u8(0)));
             length = 0;
         }
         v0 = veorq_u64(v0, msg);
@@ -1670,6 +1666,7 @@ Clay_LayoutElementHashMapItem* Clay__AddHashMapItem(Clay_ElementId elementId, Cl
             item.nextIndex = hashItem->nextIndex;
             if (hashItem->generation <= context->generation) { // First collision - assume this is the "same" element
                 hashItem->elementId = elementId; // Make sure to copy this across. If the stringId reference has changed, we should update the hash item to use the new one.
+                hashItem->idAlias = idAlias;
                 hashItem->generation = context->generation + 1;
                 hashItem->layoutElement = layoutElement;
                 hashItem->debugData->collision = false;
@@ -1980,7 +1977,7 @@ Clay_ElementId Clay__AttachId(Clay_ElementId elementId) {
     uint32_t idAlias = openLayoutElement->id;
     openLayoutElement->id = elementId.id;
     Clay__AddHashMapItem(elementId, openLayoutElement, idAlias);
-    Clay__StringArray_Add(&context->layoutElementIdStrings, elementId.stringId);
+    Clay__StringArray_Set(&context->layoutElementIdStrings, context->layoutElements.length - 1, elementId.stringId);
     return elementId;
 }
 
@@ -3810,10 +3807,10 @@ void Clay_SetPointerState(Clay_Vector2 position, bool isPointerDown) {
             Clay_LayoutElementHashMapItem *mapItem = Clay__GetHashMapItem(currentElement->id); // TODO think of a way around this, maybe the fact that it's essentially a binary tree limits the cost, but the worst case is not great
             int32_t clipElementId = Clay__int32_tArray_GetValue(&context->layoutElementClipElementIds, (int32_t)(currentElement - context->layoutElements.internalArray));
             Clay_LayoutElementHashMapItem *clipItem = Clay__GetHashMapItem(clipElementId);
-            Clay_BoundingBox elementBox = mapItem->boundingBox;
-            elementBox.x -= root->pointerOffset.x;
-            elementBox.y -= root->pointerOffset.y;
             if (mapItem) {
+                Clay_BoundingBox elementBox = mapItem->boundingBox;
+                elementBox.x -= root->pointerOffset.x;
+                elementBox.y -= root->pointerOffset.y;
                 if ((Clay__PointIsInsideRect(position, elementBox)) && (clipElementId == 0 || (Clay__PointIsInsideRect(position, clipItem->boundingBox)))) {
                     if (mapItem->onHoverFunction) {
                         mapItem->onHoverFunction(mapItem->elementId, context->pointerInfo, mapItem->hoverFunctionUserData);
