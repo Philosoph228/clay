@@ -1,11 +1,8 @@
 #include <Windows.h>
 #include <wincodec.h>
 
-// #define USE_INTRINSICS
-// #define USE_FAST_SQRT
-
-#if defined(USE_INTRINSICS)
-#include <immintrin.h>
+#if !defined(CLAY_DISABLE_SIMD) && (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+#include <immintrin.h>  // AVX intrinsincs for faster sqrtf
 #endif
 
 #include "../../clay.h"
@@ -13,31 +10,52 @@
 HDC renderer_hdcMem = {0};
 HBITMAP renderer_hbmMem = {0};
 HANDLE renderer_hOld = {0};
-bool gdi_fabulous = true;
+DWORD g_dwGdiRenderFlags;
 
+#ifndef RECTWIDTH
 #define RECTWIDTH(rc)   ((rc).right - (rc).left)
+#endif
+#ifndef RECTHEIGHT
 #define RECTHEIGHT(rc)  ((rc).bottom - (rc).top)
+#endif
+
+// Renderer options bit flags
+// RF clearly stated in the name to avoid confusion with possible macro definitions for other purposes
+#define CLAYGDI_RF_ALPHABLEND       0x00000001
+#define CLAYGDI_RF_SMOOTHCORNERS    0x00000002
+// These are bitflags, not indexes. Next would be 0x00000004
+
+inline DWORD Clay_Win32_GetRendererFlags() { return g_dwGdiRenderFlags; }
+
+// Replaces the rendering flags with new ones provided
+inline void Clay_Win32_SetRendererFlags(DWORD dwFlags) { g_dwGdiRenderFlags = dwFlags; }
+
+// Returns `true` if flags were modified
+inline bool Clay_Win32_ModifyRendererFlags(DWORD dwRemove, DWORD dwAdd)
+{
+    DWORD dwSavedFlags = g_dwGdiRenderFlags;
+    DWORD dwNewFlags = (dwSavedFlags & ~dwRemove) | dwAdd;
+
+    if (dwSavedFlags == dwNewFlags)
+        return false;
+
+    Clay_Win32_SetRendererFlags(dwNewFlags);
+    return true;
+}
+
 
 /*----------------------------------------------------------------------------+
  | Math stuff start                                                           |
  +----------------------------------------------------------------------------*/
-#if defined(USE_INTRINSICS)
-#define sqrtf_impl(x) intrin_sqrtf(x)
-#elif defined(USE_FAST_SQRT)
-#define sqrtf_impl(x) fast_sqrtf(x)
-#else
-#define sqrtf_impl(x) sqrtf(x)  // Fallback to std sqrtf
-#endif
-
-// Use intrinsics
-#if defined(USE_INTRINSICS)
+// Intrinsincs wrappers
+#if !defined(CLAY_DISABLE_SIMD) && (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
 inline float intrin_sqrtf(const float f)
 {
     __m128 temp = _mm_set_ss(f);
     temp = _mm_sqrt_ss(temp);
     return _mm_cvtss_f32(temp);
 }
-#endif  // defined(USE_INTRINSICS)
+#endif
 
 // Use fast inverse square root
 #if defined(USE_FAST_SQRT)
@@ -65,6 +83,15 @@ float fast_sqrtf(float number)
     if (number < 0.0f) return 0.0f; // Handle negative input
     return number * fast_inv_sqrtf(number);
 }
+#endif
+
+// sqrtf_impl implementation chooser
+#if !defined(CLAY_DISABLE_SIMD) && (defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64))
+#define sqrtf_impl(x) intrin_sqrtf(x)
+#elif defined(USE_FAST_SQRT)
+#define sqrtf_impl(x) fast_sqrtf(x)
+#else
+#define sqrtf_impl(x) sqrtf(x)  // Fallback to std sqrtf
 #endif
 /*----------------------------------------------------------------------------+
  | Math stuff end                                                             |
@@ -98,7 +125,6 @@ static inline Clay_Color ColorBlend(Clay_Color base, Clay_Color overlay, float f
 
 static float RoundedRectPixelCoverage(int x, int y, const Clay_CornerRadius radius, int width, int height) {
     // Check if the pixel is in one of the four rounded corners
-
     if (x < radius.topLeft && y < radius.topLeft) {
         // Top-left corner
         float dx = radius.topLeft - x - 1;
@@ -734,6 +760,7 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
         }
         case CLAY_RENDER_COMMAND_TYPE_RECTANGLE:
         {
+            DWORD dwFlags = Clay_Win32_GetRendererFlags();
             Clay_RectangleRenderData rrd = renderCommand->renderData.rectangle;
             RECT r = rc;
 
@@ -742,13 +769,20 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
             r.right = boundingBox.x + boundingBox.width;
             r.bottom = boundingBox.y + boundingBox.height;
 
-            bool translucid = rrd.backgroundColor.a > 0.0f && rrd.backgroundColor.a < 255.0f;
+            bool translucid = false;
+            // There is need to check that only if alphablending is enabled.
+            // In other case the blending will be always opaque and we can jump to simpler FillRgn/Rect
+            if (dwFlags & CLAYGDI_RF_ALPHABLEND)
+                translucid = rrd.backgroundColor.a > 0.0f && rrd.backgroundColor.a < 255.0f;
+            
             bool has_rounded_corners = rrd.cornerRadius.topLeft > 0.0f
                 || rrd.cornerRadius.topRight > 0.0f
                 || rrd.cornerRadius.bottomLeft > 0.0f
                 || rrd.cornerRadius.bottomRight > 0.0f;
 
-            if (gdi_fabulous && (translucid || has_rounded_corners))
+            // We go here if CLAYGDI_RF_SMOOTHCORNERS flag is set and one of the corners is rounded
+            // Also we go here if GLAYGDI_RF_ALPHABLEND flag is set and the fill color is translucid
+            if ((dwFlags & CLAYGDI_RF_ALPHABLEND) && translucid || (dwFlags & CLAYGDI_RF_SMOOTHCORNERS) && has_rounded_corners)
             {
                 __Clay_Win32_FillRoundRect(renderer_hdcMem, &r, rrd.backgroundColor, rrd.cornerRadius);
             }
@@ -1124,7 +1158,7 @@ HFONT Clay_Win32_SimpleCreateFont(const char* filePath, const char* family, int 
     // If negative, treat height as Pt rather than pixels
     if (height < 0) {
         // Get the screen DPI
-        HDC hScreenDC = GetDC(HWND_DESKTOP);
+        HDC hScreenDC = GetDC(NULL);
         int iScreenDPI = GetDeviceCaps(hScreenDC, LOGPIXELSY);
         ReleaseDC(HWND_DESKTOP, hScreenDC);
 
@@ -1133,22 +1167,9 @@ HFONT Clay_Win32_SimpleCreateFont(const char* filePath, const char* family, int 
     }
 
     // Create the font using the calculated height and the font name
-    HFONT hFont = CreateFont(
-        fontHeight,             // Height 
-        0,                      // Width (0 means default width)
-        0,                      // Escapement angle
-        0,                      // Orientation angle
-        weight,                 // Font weight
-        FALSE,                  // Italic
-        FALSE,                  // Underline
-        FALSE,                  // Strikeout
-        ANSI_CHARSET,           // Character set
-        OUT_DEFAULT_PRECIS,     // Output precision
-        CLIP_DEFAULT_PRECIS,    // Clipping precision
-        DEFAULT_QUALITY,        // Font quality
-        DEFAULT_PITCH,          // Pitch and family
-        family                  // Font name
-    );
+    HFONT hFont = CreateFont(fontHeight, 0, 0, 0, weight, FALSE, FALSE, FALSE,
+        ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+        DEFAULT_PITCH, family);
 
     return hFont;
 }

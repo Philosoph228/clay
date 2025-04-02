@@ -28,8 +28,12 @@ bool ui_debug_mode;
 void* fonts[1];
 LOGFONT logfonts[1];
 
+#ifndef RECTWIDTH
 #define RECTWIDTH(rc)   ((rc).right - (rc).left)
+#endif
+#ifndef RECTHEIGHT
 #define RECTHEIGHT(rc)  ((rc).bottom - (rc).top)
+#endif
 
 LRESULT CALLBACK WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -156,6 +160,8 @@ int APIENTRY WinMain(
     uint64_t clayRequiredMemory = Clay_MinMemorySize();
     Clay_Arena clayMemory = Clay_CreateArenaWithCapacityAndMemory(clayRequiredMemory, malloc(clayRequiredMemory));
     Clay_Initialize(clayMemory, (Clay_Dimensions){.width = 800, .height = 600}, (Clay_ErrorHandler){HandleClayErrors}); // This final argument is new since the video was published
+
+    Clay_Win32_SetRendererFlags(CLAYGDI_RF_ALPHABLEND | CLAYGDI_RF_SMOOTHCORNERS);
 
     // Initialize clay fonts and text drawing
     Clay_Win32_SetFontResourceMode(FONT_RESOURCE_LOGFONT);
