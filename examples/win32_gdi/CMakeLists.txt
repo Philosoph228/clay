@@ -8,6 +8,10 @@ add_executable(win32_gdi WIN32 main.c)
 target_compile_options(win32_gdi PUBLIC)
 target_include_directories(win32_gdi PUBLIC .)
 
+set(USE_MSIMG32 ON)
+
+target_link_libraries(win32_gdi PUBLIC windowscodecs ole32)
+
 if(USE_MSIMG32)
     target_compile_definitions(win32_gdi PUBLIC USE_MSIMG32)
     target_link_libraries(win32_gdi PUBLIC msimg32)

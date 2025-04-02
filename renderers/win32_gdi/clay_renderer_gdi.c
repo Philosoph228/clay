@@ -1,4 +1,5 @@
 #include <Windows.h>
+#include <wincodec.h>
 
 // #define USE_INTRINSICS
 // #define USE_FAST_SQRT
@@ -258,16 +259,178 @@ static void __Clay_Win32_FillRoundRect(HDC hdc, PRECT prc, Clay_Color color, Cla
     DestroyHDCSubstitute(&substitute);
 }
 
-#define ALPHABLEND_NEAREST  0x0
-#define ALPHABLEND_BILINEAR   0x1
-#define ALPHABLEND_BICUBIC  0x2
+static bool CheckHResult(HRESULT hr) {
+    if (FAILED(hr)) {
+        SetLastError(hr);
+        return false;
+    }
+    return true;
+}
+
+HBITMAP CreateHBITMAPFromPixels(BYTE* pixels, UINT width, UINT height) {
+    BITMAPINFO bmi = { 0 };
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -(LONG)height; // Negative for top-down
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC hdc = GetDC(NULL);
+    HBITMAP hBitmap = CreateDIBitmap(
+        hdc,
+        &bmi.bmiHeader,
+        CBM_INIT,
+        pixels,
+        &bmi,
+        DIB_RGB_COLORS
+    );
+    ReleaseDC(NULL, hdc);
+    return hBitmap;
+}
+
+HBITMAP LoadImageToHBITMAP(const char* filename) {
+    HRESULT hr = S_OK;
+    IWICImagingFactory* pFactory = NULL;
+    IWICBitmapDecoder* pDecoder = NULL;
+    IWICBitmapFrameDecode* pFrame = NULL;
+    IWICFormatConverter* pConverter = NULL;
+    HBITMAP hBitmap = NULL;
+    BYTE* pixels = NULL;
+
+    WCHAR wszFileName[MAX_PATH];
+    MultiByteToWideChar(CP_UTF8, 0, filename, -1, wszFileName, MAX_PATH);
+
+    hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (!CheckHResult(hr)) return NULL;
+
+    hr = CoCreateInstance(
+        &CLSID_WICImagingFactory,
+        NULL,
+        CLSCTX_INPROC_SERVER,
+        &IID_IWICImagingFactory,
+        (LPVOID*)&pFactory);
+
+    if (CheckHResult(hr)) {
+        hr = pFactory->lpVtbl->CreateDecoderFromFilename(
+            pFactory,
+            wszFileName,
+            NULL,
+            GENERIC_READ,
+            WICDecodeMetadataCacheOnLoad,
+            &pDecoder);
+
+        if (CheckHResult(hr)) {
+            hr = pDecoder->lpVtbl->GetFrame(pDecoder, 0, &pFrame);
+
+            if (CheckHResult(hr)) {
+                hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverter);
+
+                if (CheckHResult(hr)) {
+                    hr = pConverter->lpVtbl->Initialize(
+                        pConverter,
+                        (IWICBitmapSource*)pFrame,
+                        &GUID_WICPixelFormat32bppBGRA,
+                        WICBitmapDitherTypeNone,
+                        NULL,
+                        0.0f,
+                        WICBitmapPaletteTypeCustom);
+
+                    if (CheckHResult(hr)) {
+                        UINT width = 0, height = 0;
+                        pConverter->lpVtbl->GetSize(pConverter, &width, &height);
+
+                        // Create buffer for pixel data
+                        UINT stride = width * 4;
+                        UINT bufferSize = stride * height;
+                        pixels = (BYTE*)HeapAlloc(GetProcessHeap(), 0, bufferSize);
+
+                        if (pixels) {
+                            // Copy pixels to our buffer
+                            WICRect rc = { 0, 0, width, height };
+                            hr = pConverter->lpVtbl->CopyPixels(
+                                pConverter,
+                                &rc,
+                                stride,
+                                bufferSize,
+                                pixels);
+
+                            if (CheckHResult(hr)) {
+                                // Create HBITMAP from pixel data
+                                hBitmap = CreateHBITMAPFromPixels(pixels, width, height);
+                            }
+                            HeapFree(GetProcessHeap(), 0, pixels);
+                        }
+                    }
+                    pConverter->lpVtbl->Release(pConverter);
+                }
+                pFrame->lpVtbl->Release(pFrame);
+            }
+            pDecoder->lpVtbl->Release(pDecoder);
+        }
+        pFactory->lpVtbl->Release(pFactory);
+    }
+    CoUninitialize();
+    return hBitmap;
+}
+
+void PremultiplyAlpha(HBITMAP hBitmap) {
+    BITMAP bm;
+    GetObject(hBitmap, sizeof(BITMAP), &bm);
+
+    if (bm.bmBitsPixel != 32) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return;
+    }
+
+    BITMAPINFO bi = { 0 };
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = bm.bmWidth;
+    bi.bmiHeader.biHeight = bm.bmHeight;
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+
+    HDC hdc = GetDC(NULL);
+    BYTE* pBits = (BYTE*)malloc(bm.bmWidth * bm.bmHeight * 4);
+
+    if (GetDIBits(hdc, hBitmap, 0, bm.bmHeight, pBits, &bi, DIB_RGB_COLORS)) {
+        for (int y = 0; y < bm.bmHeight; y++) {
+            BYTE* pPixel = pBits + y * bm.bmWidth * 4;
+
+            for (int x = 0; x < bm.bmWidth; x++) {
+                BYTE alpha = pPixel[3]; // Alpha channel
+
+                if (alpha != 255) {
+                    pPixel[0] = (pPixel[0] * alpha) / 255; // Blue
+                    pPixel[1] = (pPixel[1] * alpha) / 255; // Green
+                    pPixel[2] = (pPixel[2] * alpha) / 255; // Red
+                }
+                pPixel += 4;
+            }
+        }
+
+        SetDIBits(hdc, hBitmap, 0, bm.bmHeight, pBits, &bi, DIB_RGB_COLORS);
+    }
+
+    free(pBits);
+    ReleaseDC(NULL, hdc);
+}
+
+#define ALPHABLEND_NEAREST      0x0
+#define ALPHABLEND_BILINEAR     0x1
+#define ALPHABLEND_BICUBIC      0x2
 
 #define FONT_RESOURCE_HFONT     0x01
 #define FONT_RESOURCE_STRING    0x02
 #define FONT_RESOURCE_LOGFONT   0x03
 
+#define BITMAP_RESOURCE_HBITMAP 0x01
+#define BITMAP_RESOURCE_PATH    0x02
+
 DWORD g_alphaBlendStretchMode;
 DWORD g_fontResourceMode;
+DWORD g_bitmapResourceMode = BITMAP_RESOURCE_PATH;
 
 int Clay_Win32_SetFontResourceMode(DWORD dwMode)
 {
@@ -788,9 +951,33 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
         case CLAY_RENDER_COMMAND_TYPE_IMAGE:
         {
             Clay_ImageRenderData ird = renderCommand->renderData.image;
-            HBITMAP img = *(HBITMAP*)ird.imageData;
 
-            DrawBmp(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height, img);
+            if (g_bitmapResourceMode == BITMAP_RESOURCE_HBITMAP)
+            {
+                HBITMAP img = *(HBITMAP*)ird.imageData;
+                DrawBmp(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height, img);
+            }
+            else if (g_bitmapResourceMode == BITMAP_RESOURCE_PATH)
+            {
+                HDC hdcImage = CreateCompatibleDC(GetDC(HWND_DESKTOP));
+                HBITMAP hbm = LoadImageToHBITMAP(ird.imageData);
+                HBITMAP hbmOld = SelectObject(hdcImage, hbm);
+
+#if 0
+                SetStretchBltMode(renderer_hdcMem, HALFTONE);
+                StretchBlt(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height,
+                    hdcImage, 0, 0, ird.sourceDimensions.width, ird.sourceDimensions.height, SRCCOPY);
+#else
+                // PremultiplyAlpha(hbm);
+                BLENDFUNCTION blend = { AC_SRC_OVER, 0, 0, AC_SRC_ALPHA };
+                AlphaBlend(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height,
+                    hdcImage, 0, 0, ird.sourceDimensions.width, ird.sourceDimensions.height, blend);
+#endif
+
+                SelectObject(hdcImage, hbmOld);
+                DeleteObject(hbm);
+                DeleteDC(hdcImage);
+            }
 
             break;
         }
