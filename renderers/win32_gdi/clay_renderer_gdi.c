@@ -12,6 +12,8 @@ HBITMAP renderer_hbmMem = {0};
 HANDLE renderer_hOld = {0};
 DWORD g_dwGdiRenderFlags;
 
+const BLENDFUNCTION g_blendConstant = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+
 #ifndef RECTWIDTH
 #define RECTWIDTH(rc)   ((rc).right - (rc).left)
 #endif
@@ -293,6 +295,8 @@ static bool CheckHResult(HRESULT hr) {
     return true;
 }
 
+// Create HBITMAP object from 32bpp memory buffer, in top-down order
+// Caller responsible for deleting the object
 HBITMAP CreateHBITMAPFromPixels(BYTE* pixels, UINT width, UINT height) {
     BITMAPINFO bmi = { 0 };
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -315,6 +319,8 @@ HBITMAP CreateHBITMAPFromPixels(BYTE* pixels, UINT width, UINT height) {
     return hBitmap;
 }
 
+// Loads the image from given filesystem path and creating HBITMAP for it
+// Caller responsible for deleting the object
 HBITMAP LoadImageToHBITMAP(const char* filename) {
     HRESULT hr = S_OK;
     IWICImagingFactory* pFactory = NULL;
@@ -324,6 +330,7 @@ HBITMAP LoadImageToHBITMAP(const char* filename) {
     HBITMAP hBitmap = NULL;
     BYTE* pixels = NULL;
 
+    // As WIC excpects wide string, convert it first
     WCHAR wszFileName[MAX_PATH];
     MultiByteToWideChar(CP_UTF8, 0, filename, -1, wszFileName, MAX_PATH);
 
@@ -337,7 +344,8 @@ HBITMAP LoadImageToHBITMAP(const char* filename) {
         &IID_IWICImagingFactory,
         (LPVOID*)&pFactory);
 
-    if (CheckHResult(hr)) {
+    if (CheckHResult(hr))
+    {
         hr = pFactory->lpVtbl->CreateDecoderFromFilename(
             pFactory,
             wszFileName,
@@ -346,13 +354,16 @@ HBITMAP LoadImageToHBITMAP(const char* filename) {
             WICDecodeMetadataCacheOnLoad,
             &pDecoder);
 
-        if (CheckHResult(hr)) {
+        if (CheckHResult(hr))
+        {
             hr = pDecoder->lpVtbl->GetFrame(pDecoder, 0, &pFrame);
 
-            if (CheckHResult(hr)) {
+            if (CheckHResult(hr))
+            {
                 hr = pFactory->lpVtbl->CreateFormatConverter(pFactory, &pConverter);
 
-                if (CheckHResult(hr)) {
+                if (CheckHResult(hr))
+                {
                     hr = pConverter->lpVtbl->Initialize(
                         pConverter,
                         (IWICBitmapSource*)pFrame,
@@ -362,7 +373,8 @@ HBITMAP LoadImageToHBITMAP(const char* filename) {
                         0.0f,
                         WICBitmapPaletteTypeCustom);
 
-                    if (CheckHResult(hr)) {
+                    if (CheckHResult(hr))
+                    {
                         UINT width = 0, height = 0;
                         pConverter->lpVtbl->GetSize(pConverter, &width, &height);
 
@@ -371,7 +383,8 @@ HBITMAP LoadImageToHBITMAP(const char* filename) {
                         UINT bufferSize = stride * height;
                         pixels = (BYTE*)HeapAlloc(GetProcessHeap(), 0, bufferSize);
 
-                        if (pixels) {
+                        if (pixels)
+                        {
                             // Copy pixels to our buffer
                             WICRect rc = { 0, 0, width, height };
                             hr = pConverter->lpVtbl->CopyPixels(
@@ -381,7 +394,8 @@ HBITMAP LoadImageToHBITMAP(const char* filename) {
                                 bufferSize,
                                 pixels);
 
-                            if (CheckHResult(hr)) {
+                            if (CheckHResult(hr))
+                            {
                                 // Create HBITMAP from pixel data
                                 hBitmap = CreateHBITMAPFromPixels(pixels, width, height);
                             }
@@ -400,6 +414,7 @@ HBITMAP LoadImageToHBITMAP(const char* filename) {
     return hBitmap;
 }
 
+// Premultiply alpha in given 32bpp HBITMAP
 void PremultiplyAlpha(HBITMAP hBitmap) {
     BITMAP bm;
     GetObject(hBitmap, sizeof(BITMAP), &bm);
@@ -420,11 +435,14 @@ void PremultiplyAlpha(HBITMAP hBitmap) {
     HDC hdc = GetDC(NULL);
     BYTE* pBits = (BYTE*)malloc(bm.bmWidth * bm.bmHeight * 4);
 
-    if (GetDIBits(hdc, hBitmap, 0, bm.bmHeight, pBits, &bi, DIB_RGB_COLORS)) {
-        for (int y = 0; y < bm.bmHeight; y++) {
+    if (GetDIBits(hdc, hBitmap, 0, bm.bmHeight, pBits, &bi, DIB_RGB_COLORS))
+    {
+        for (int y = 0; y < bm.bmHeight; y++)
+        {
             BYTE* pPixel = pBits + y * bm.bmWidth * 4;
 
-            for (int x = 0; x < bm.bmWidth; x++) {
+            for (int x = 0; x < bm.bmWidth; x++)
+            {
                 BYTE alpha = pPixel[3]; // Alpha channel
 
                 if (alpha != 255) {
@@ -539,11 +557,63 @@ static int InternalAlphaBlend(
     return 0;
 }
 
+// AlphaBlend implementation chooser
 #if defined(USE_MSIMG32)
 #define AlphaBlend_impl AlphaBlend
 #else
 #define AlphaBlend_impl InternalAlphaBlend
 #endif  // defined(USE_MSIMG32)
+
+// Creating a 32bpp bitmap
+// Caller responsible for deleting the object
+static inline HBITMAP CreateARGB8Bitmap(HDC hdc, int width, int height, void** ppBits)
+{
+    BITMAPINFO bmi;
+
+    ZeroMemory(&bmi, sizeof(BITMAPINFO));
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFO);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = height;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    bmi.bmiHeader.biSizeImage = width * height * 4;
+
+    return CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, ppBits, NULL, 0);
+}
+
+// Reads the HBITMAP and fills the provided BITMAPINFO structure
+// Returns TRUE if succeed, otherwise returns FALSE
+static inline BOOL GetBitmapInfo(HBITMAP hBitmap, BITMAPINFO* pBmi)
+{
+    if (!hBitmap || !pBmi)
+        return FALSE;
+
+    // First get basic bitmap info to determine size
+    BITMAP bm;
+    if (!GetObject(hBitmap, sizeof(BITMAP), &bm))
+        return FALSE;
+
+    // Initialize BITMAPINFO structure
+    ZeroMemory(pBmi, sizeof(BITMAPINFO));
+    pBmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    pBmi->bmiHeader.biWidth = bm.bmWidth;
+    pBmi->bmiHeader.biHeight = bm.bmHeight;
+    pBmi->bmiHeader.biPlanes = 1;
+    pBmi->bmiHeader.biBitCount = bm.bmBitsPixel;
+    pBmi->bmiHeader.biCompression = BI_RGB;
+
+    // Get the full BITMAPINFO (including color table if present)
+    HDC hdc = CreateCompatibleDC(NULL);
+    if (hdc == NULL)
+        return FALSE;
+
+    // Call GetDIBits to fill the BITMAPINFO structure
+    int result = GetDIBits(hdc, hBitmap, 0, 0, NULL, pBmi, DIB_RGB_COLORS);
+    DeleteDC(hdc);
+
+    return result != 0;
+}
 
 BOOL DrawTransparentRect(HDC hdc, RECT rc, HBRUSH brush, uint8_t opacity)
 {
@@ -551,25 +621,14 @@ BOOL DrawTransparentRect(HDC hdc, RECT rc, HBRUSH brush, uint8_t opacity)
     BLENDFUNCTION blend = { AC_SRC_OVER, 0, opacity, 0 };
     RECT drawrc = { 0, 0, rc.right - rc.left, rc.bottom - rc.top };
 
-    HBITMAP bmp;
-    BITMAPINFO bmi;
-
-    ZeroMemory(&bmi, sizeof(BITMAPINFO));
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = rc.right - rc.left;
-    bmi.bmiHeader.biHeight = rc.bottom - rc.top;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32; // 32bpp bitmap
-    bmi.bmiHeader.biCompression = BI_RGB;
-    bmi.bmiHeader.biSizeImage = (rc.right - rc.left) * (rc.bottom - rc.top) * 4;
-
-    bmp = CreateDIBSection(tempHdc, &bmi, DIB_RGB_COLORS, NULL, NULL, 0x0);
-    SelectObject(tempHdc, bmp);
+    HBITMAP hBmp;
+    hBmp = CreateARGB8Bitmap(tempHdc, RECTWIDTH(rc), RECTHEIGHT(rc), NULL);
+    SelectObject(tempHdc, hBmp);
 
     FillRect(tempHdc, &drawrc, brush);
     BOOL rv = AlphaBlend_impl(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, tempHdc, 0, 0, drawrc.right - drawrc.left, drawrc.bottom - drawrc.top, blend);
 
-    DeleteObject(bmp);
+    DeleteObject(hBmp);
     DeleteDC(tempHdc);
 
     return rv;
@@ -578,35 +637,30 @@ BOOL DrawTransparentRect(HDC hdc, RECT rc, HBRUSH brush, uint8_t opacity)
 BOOL DrawTransparentRgn(HDC hdc, RECT rc, HRGN rgn, Clay_Color color, uint8_t opacity)
 {
     HDC tempHdc = CreateCompatibleDC(hdc);
-    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
     RECT drawrc = { 0, 0, rc.right - rc.left, rc.bottom - rc.top };
 
-    HBITMAP bmp;
-    BITMAPINFO bmi;
-
-    ZeroMemory(&bmi, sizeof(BITMAPINFO));
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = rc.right - rc.left;
-    bmi.bmiHeader.biHeight = rc.bottom - rc.top;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32; // 32bpp bitmap
-    bmi.bmiHeader.biCompression = BI_RGB;
-    bmi.bmiHeader.biSizeImage = (rc.right - rc.left) * (rc.bottom - rc.top) * 4;
-
+    HBITMAP hBmp;
     void* pBits;
-    bmp = CreateDIBSection(tempHdc, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0x0);
+    hBmp = CreateARGB8Bitmap(tempHdc, RECTWIDTH(rc), RECTHEIGHT(rc), &pBits);
+    if (hBmp == NULL) {
+        DeleteDC(tempHdc);
+        return FALSE;
+    }
 
     COLORREF premultClr = RGB(
-        color.r * color.a / 255, 
+        color.r * color.a / 255,
         color.g * color.a / 255,
         color.b * color.a / 255
     );
     HBRUSH brush = CreateSolidBrush(premultClr);
 
+    BITMAPINFO bmi = { 0 };
+    GetBitmapInfo(hBmp, &bmi);
+
     // Set the bitmap to opaque white
     memset(pBits, 0xFF, bmi.bmiHeader.biSizeImage);
 
-    SelectObject(tempHdc, bmp);
+    SelectObject(tempHdc, hBmp);
     SetBkMode(tempHdc, TRANSPARENT);
 
     OffsetRgn(rgn, -rc.left, -rc.top);
@@ -622,9 +676,9 @@ BOOL DrawTransparentRgn(HDC hdc, RECT rc, HRGN rgn, Clay_Color color, uint8_t op
         }
     }
 
-    BOOL rv = AlphaBlend_impl(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, tempHdc, 0, 0, drawrc.right - drawrc.left, drawrc.bottom - drawrc.top, blend);
+    BOOL rv = AlphaBlend_impl(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, tempHdc, 0, 0, drawrc.right - drawrc.left, drawrc.bottom - drawrc.top, g_blendConstant);
 
-    DeleteObject(bmp);
+    DeleteObject(hBmp);
     DeleteObject(brush);
     DeleteDC(tempHdc);
 
@@ -639,16 +693,8 @@ void DrawBmp(HDC hdc, int x, int y, int width, int height, HBITMAP hBitmap) {
     BITMAP imgdata;
     GetObject(hBitmap, sizeof(BITMAP), &imgdata);
 
-    BITMAPINFO bmi = { 0 };
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = width;
-    bmi.bmiHeader.biHeight = height;
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
     void* pBits;
-    HBITMAP hScaledBitmap = CreateDIBSection(destDC, &bmi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    HBITMAP hScaledBitmap = CreateARGB8Bitmap(destDC, width, height, &pBits);
     SelectObject(destDC, hScaledBitmap);
 
     // COLORONCOLOR is used here because it massively improves performance over HALFTONE, while simultaneously not destroying the alpha channel.
@@ -665,8 +711,7 @@ void DrawBmp(HDC hdc, int x, int y, int width, int height, HBITMAP hBitmap) {
         pixel[i + 2] = pixel[i + 2] * ((float)pixel[i + 3] / 255.f);
     }
 
-    BLENDFUNCTION blend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
-    AlphaBlend_impl(hdc, x, y, width, height, destDC, 0, 0, width, height, blend);
+    AlphaBlend_impl(hdc, x, y, width, height, destDC, 0, 0, width, height, g_blendConstant);
 
     DeleteObject(hScaledBitmap);
     DeleteDC(srcDC);
@@ -802,7 +847,8 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
                     }
                     else
                     {
-                        FillRgn(renderer_hdcMem, roundedRectRgn, recColor);
+                        DrawTransparentRgn(renderer_hdcMem, r, roundedRectRgn, rrd.backgroundColor, rrd.backgroundColor.a);
+                        // FillRgn(renderer_hdcMem, roundedRectRgn, recColor);
                     }
 
                     DeleteObject(roundedRectRgn);
@@ -814,7 +860,8 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
                         DrawTransparentRect(renderer_hdcMem, r, recColor, rrd.backgroundColor.a);
                     }
                     else {
-                        FillRect(renderer_hdcMem, &r, recColor);
+                        DrawTransparentRect(renderer_hdcMem, r, recColor, rrd.backgroundColor.a);
+                        // FillRect(renderer_hdcMem, &r, recColor);
                     }
                 }
 
@@ -1003,9 +1050,8 @@ void Clay_Win32_Render(HWND hwnd, Clay_RenderCommandArray renderCommands, void* 
                     hdcImage, 0, 0, ird.sourceDimensions.width, ird.sourceDimensions.height, SRCCOPY);
 #else
                 // PremultiplyAlpha(hbm);
-                BLENDFUNCTION blend = { AC_SRC_OVER, 0, 0, AC_SRC_ALPHA };
-                AlphaBlend(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height,
-                    hdcImage, 0, 0, ird.sourceDimensions.width, ird.sourceDimensions.height, blend);
+                AlphaBlend_impl(renderer_hdcMem, boundingBox.x, boundingBox.y, boundingBox.width, boundingBox.height,
+                    hdcImage, 0, 0, ird.sourceDimensions.width, ird.sourceDimensions.height, g_blendConstant);
 #endif
 
                 SelectObject(hdcImage, hbmOld);

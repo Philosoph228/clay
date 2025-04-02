@@ -13,7 +13,7 @@
 #define CLAY_IMPLEMENTATION
 #include "../../clay.h"
 
-#include "./clay-demo.c"
+#include "../shared-layouts/clay-video-demo.c"
 
 ClayVideoDemo_Data demo_data;
 
