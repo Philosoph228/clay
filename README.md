@@ -1,4 +1,4 @@
-# Clay
+# Clay, A UI Layout Library
 **_Clay_** (short for **C Layout**) is a high performance 2D UI layout library.
 
 ### Major Features
@@ -92,7 +92,7 @@ int main() {
                 .backgroundColor = COLOR_LIGHT
             }) {
                 CLAY({ .id = CLAY_ID("ProfilePictureOuter"), .layout = { .sizing = { .width = CLAY_SIZING_GROW(0) }, .padding = CLAY_PADDING_ALL(16), .childGap = 16, .childAlignment = { .y = CLAY_ALIGN_Y_CENTER } }, .backgroundColor = COLOR_RED }) {
-                    CLAY({ .id = CLAY_ID("ProfilePicture"), .layout = { .sizing = { .width = CLAY_SIZING_FIXED(60), .height = CLAY_SIZING_FIXED(60) }}, .image = { .imageData = &profilePicture, .sourceDimensions = {60, 60} } }) {}
+                    CLAY({ .id = CLAY_ID("ProfilePicture"), .layout = { .sizing = { .width = CLAY_SIZING_FIXED(60), .height = CLAY_SIZING_FIXED(60) }}, .image = { .imageData = &profilePicture } }) {}
                     CLAY_TEXT(CLAY_STRING("Clay - UI Library"), CLAY_TEXT_CONFIG({ .fontSize = 24, .textColor = {255, 255, 255, 255} }));
                 }
 
@@ -161,8 +161,8 @@ For help starting out or to discuss clay, considering joining [the discord serve
     - [Clay_MinMemorySize](#clay_minmemorysize)
     - [Clay_CreateArenaWithCapacityAndMemory](#clay_createarenawithcapacityandmemory)
     - [Clay_SetMeasureTextFunction](#clay_setmeasuretextfunction)
-    - [Clay_ResetMeasureTextCache](#clau_resetmeasuretextcache)
-    - [Clay_SetMaxElementCount](clay_setmaxelementcount)
+    - [Clay_ResetMeasureTextCache](#clay_resetmeasuretextcache)
+    - [Clay_SetMaxElementCount](#clay_setmaxelementcount)
     - [Clay_SetMaxMeasureTextCacheWordCount](#clay_setmaxmeasuretextcachewordcount)
     - [Clay_Initialize](#clay_initialize)
     - [Clay_GetCurrentContext](#clay_getcurrentcontext)
@@ -176,20 +176,13 @@ For help starting out or to discuss clay, considering joining [the discord serve
     - [Clay_OnHover](#clay_onhover)
     - [Clay_PointerOver](#clay_pointerover)
     - [Clay_GetScrollContainerData](#clay_getscrollcontainerdata)
+    - [Clay_GetElementData](#clay_getelementdata)
     - [Clay_GetElementId](#clay_getelementid)
   - [Element Macros](#element-macros)
-    - [CLAY](#clay-1)
+    - [CLAY](#clay)
     - [CLAY_ID](#clay_id)
     - [CLAY_IDI](#clay_idi)
-    - [CLAY_LAYOUT](#clay_layout)
-    - [CLAY_RECTANGLE](#clay_rectangle)
-    - [CLAY_TEXT](#clay_text)
-    - [CLAY_IMAGE](#clay_image)
-    - [CLAY_SCROLL](#clay_scroll)
-    - [CLAY_BORDER](#clay_border)
-    - [CLAY_FLOATING](#clay_floating)
-    - [CLAY_CUSTOM_ELEMENT](#clay_custom_element)
-  - [Data Structures & Defs](data-structures--definitions)
+  - [Data Structures & Defs](#data-structures--definitions)
     - [Clay_String](#clay_string)
     - [Clay_ElementId](#clay_elementid)
     - [Clay_RenderCommandArray](#clay_rendercommandarray)
@@ -350,7 +343,11 @@ If this is an issue for you, performing layout twice per frame with the same dat
 
 ### Scrolling Elements
 
-Elements are configured as scrollable with the `CLAY_SCROLL` macro. To make scroll containers respond to mouse wheel and scroll events, two functions need to be called before `BeginLayout()`:
+Elements are configured as scrollable with the `.clip` configuration. Clipping instructs the renderer to not draw any pixels outside the clipped element's boundaries, and by specifying the `.childOffset` field, the clipped element's contents can be shifted around to provide "scrolling" behaviour.
+
+You can either calculate scrolling yourself and simply provide the current offset each frame to `.childOffset`, or alternatively, Clay provides a built in mechanism for tracking and updating scroll container offsets, detailed below.
+
+To make scroll containers respond to mouse wheel and scroll events, two functions need to be called before `BeginLayout()`:
 ```C
 Clay_Vector2 mousePosition = { x, y };
 // Reminder: Clay_SetPointerState must be called before Clay_UpdateScrollContainers otherwise it will have no effect
@@ -362,9 +359,17 @@ Clay_UpdateScrollContainers(
     float deltaTime, // Time since last frame in seconds as a float e.g. 8ms is 0.008f
 );
 // ...
+// Clay internally tracks the scroll containers offset, and Clay_GetScrollOffset returns the x,y offset of the currently open element
+CLAY({ .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() } }) {
+    // Scrolling contents
+}
+// .childOffset can be provided directly if you would prefer to manage scrolling outside of clay
+CLAY({ .clip = { .vertical = true, .childOffset = myData.scrollContainer.offset } }) {
+    // Scrolling contents
+}
 ```
 
-More specific details can be found in the full [Scroll API](#clay_scroll).
+More specific details can be found in the docs for [Clay_UpdateScrollContainers](#clay_updatescrollcontainers), [Clay_SetPointerState](#clay_setpointerstate), [Clay_ClipElementConfig](#clay_clipelementconfig) and [Clay_GetScrollOffset](#clay_getscrolloffset).
 
 ### Floating Elements ("Absolute" Positioning)
 
@@ -451,7 +456,7 @@ switch (renderCommand->commandType) {
 }
 ```
 
-More specific details can be found in the full [Custom Element API](#clay_custom_element).
+More specific details can be found in the full [Custom Element API](#clay_customelementconfig).
 
 ### Retained Mode Rendering
 Clay was originally designed for [Immediate Mode](https://www.youtube.com/watch?v=Z1qyvQsjK5Y) rendering - where the entire UI is redrawn every frame. This may not be possible with your platform, renderer design or performance constraints.
@@ -483,6 +488,13 @@ There are also supported bindings for other languages, including:
 
 - [Odin Bindings](https://github.com/nicbarker/clay/tree/main/bindings/odin)
 - [Rust Bindings](https://github.com/clay-ui-rs/clay)
+
+### Other implementations
+Clay has also been implemented in other languages:
+
+- [`glay`](https://github.com/soypat/glay) - Go line-by-line rewrite with readability as main goal.
+- [`totallygamerjet/clay`](https://github.com/totallygamerjet/clay) - Port using `cxgo`, a C to Go transpiler.
+- [`goclay`](https://github.com/igadmg/goclay) - Go line-by-line rewrite closely matching the reference.
 
 ### Debug Tools
 
@@ -658,6 +670,25 @@ Touch / drag scrolling only occurs if the `enableDragScrolling` parameter is `tr
 
 ---
 
+### Clay_GetScrollOffset
+
+`Clay_Vector2 Clay_GetScrollOffset()`
+
+Returns the internally stored scroll offset for the currently open element.
+
+Generally intended for use with [clip elements](#clay_clipelementconfig) and the `.childOffset` field to create scrolling containers.
+
+See [Scrolling Elements](#scrolling-elements) for more details.
+
+```C
+// Create a horizontally scrolling container
+CLAY({
+    .clip = { .horizontal = true, .childOffset = Clay_GetScrollOffset() }
+})
+```
+
+---
+
 ### Clay_BeginLayout
 
 `void Clay_BeginLayout()`
@@ -767,7 +798,7 @@ CLAY({ .id = CLAY_ID("Outer"), .layout = { .padding = CLAY_PADDING_ALL(16) } }) 
         .layout = { .layoutDirection = CLAY_TOP_TO_BOTTOM, .childGap = 16 },
         .backgroundColor = { 200, 200, 100, 255 },
         .cornerRadius = CLAY_CORNER_RADIUS(10),
-        .scroll = { .vertical = true }
+        .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() }
     }) {
         // child elements
     }
@@ -808,7 +839,6 @@ Clay_TextElementConfig {
         CLAY_TEXT_WRAP_NEWLINES,
         CLAY_TEXT_WRAP_NONE,
     };
-    bool hashStringContents
 };
 ```
 
@@ -865,14 +895,6 @@ Available options are:
 - `CLAY_TEXT_WRAP_WORDS` (default) - Text will wrap on whitespace characters as container width shrinks, preserving whole words.
 - `CLAY_TEXT_WRAP_NEWLINES` -  will only wrap when encountering newline characters.
 - `CLAY_TEXT_WRAP_NONE` - Text will never wrap even if its container is compressed beyond the text measured width.
-
----
-
-**`.hashStringContents`**
-
-`CLAY_TEXT_CONFIG(.hashStringContents = true)`
-
-By default, clay will cache the dimensions of text measured by [the provided MeasureText function](#clay_setmeasuretextfunction) based on the string's pointer and length. Setting `.hashStringContents = true` will cause Clay to hash the entire string contents. Used to fix incorrect measurements caused by re-use of string memory, disabled by default as it will incur significant performance overhead for very large bodies of text.
 
 ---
 
@@ -1031,10 +1053,11 @@ typedef struct {
     Clay_LayoutConfig layout;
     Clay_Color backgroundColor;
     Clay_CornerRadius cornerRadius;
+    Clay_AspectRatioElementConfig aspectRatio;
     Clay_ImageElementConfig image;
     Clay_FloatingElementConfig floating;
     Clay_CustomElementConfig custom;
-    Clay_ScrollElementConfig scroll;
+    Clay_ClipElementConfig clip;
     Clay_BorderElementConfig border;
     void *userData;
 } Clay_ElementDeclaration;
@@ -1077,9 +1100,17 @@ Note that the `CLAY_CORNER_RADIUS(radius)` function-like macro is available to p
 
 ---
 
+**`.aspectRatio`** - `Clay_AspectRatioElementConfig`
+
+`CLAY({ .aspectRatio = 1 })`
+
+Uses [Clay_AspectRatioElementConfig](#clay_aspectratioelementconfig). Configures the element as an aspect ratio scaling element. Especially useful for rendering images, but can also be used to enforce a fixed width / height ratio of other elements.
+
+---
+
 **`.image`** - `Clay_ImageElementConfig`
 
-`CLAY({ .image = { .imageData = &myImage, .sourceDimensions = { 640, 480 } } })`
+`CLAY({ .image = { .imageData = &myImage } })`
 
 Uses [Clay_ImageElementConfig](#clay_imageelementconfig). Configures the element as an image element. Causes a render command with type `IMAGE` to be emitted.
 
@@ -1101,11 +1132,13 @@ Uses [Clay_CustomElementConfig](#clay_customelementconfig). Configures the eleme
 
 ---
 
-**`.scroll`** - `Clay_ScrollElementConfig`
+**`.clip`** - `Clay_ClipElementConfig`
 
-`CLAY({ .scroll = { .vertical = true } })`
+`CLAY({ .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() } })`
 
-Uses [Clay_ScrollElementConfig](#clay_scrollelementconfig). Configures the element as a scroll element, which causes child elements to be clipped / masked if they overflow, and together with [Clay_UpdateScrollContainer](#clay_updatescrollcontainers) enables scrolling of child contents.
+Uses [Clay_ClipElementConfig](#clay_scrollelementconfig). Configures the element as a clip element, which causes child elements to be clipped / masked if they overflow, and together with the functions listed in [Scrolling Elements](#scrolling-elements) enables scrolling of child contents.
+
+<img width="580" alt="An image demonstrating the concept of clipping which prevents rendering of a child elements pixels if they fall outside the bounds of the parent element." src="https://github.com/user-attachments/assets/2eb83ff9-e186-4ea4-8a87-d90cbc0838b5">
 
 ---
 
@@ -1140,7 +1173,7 @@ CLAY({ .color = { 200, 200, 100, 255 }, .cornerRadius = CLAY_CORNER_RADIUS(10) }
 CLAY({ 
     .backgroundColor = { 200, 200, 100, 255 }, 
     .cornerRadius = CLAY_CORNER_RADIUS(10)
-    CLAY_SCROLL({ .vertical = true })
+    .clip = { .vertical = true, .childOffset = Clay_GetScrollOffset() }
 ) {
     // child elements
 }
@@ -1261,22 +1294,11 @@ CLAY({ .id = CLAY_ID("Button"), .layout = { .layoutDirection = CLAY_TOP_TO_BOTTO
 
 ```C
 Clay_ImageElementConfig {
-    Clay_Dimensions sourceDimensions {
-        float width; float height; 
-    };
     void * imageData;
 };
 ```
 
 **Fields**
-
-**`.sourceDimensions`** - `Clay_Dimensions`
-
-`CLAY({ .image = { .sourceDimensions = { 1024, 768 } } }) {}`
-
-Used to perform **aspect ratio scaling** on the image element. As of this version of clay, aspect ratio scaling only applies to the `height` of an image (i.e. image height will scale with width growth and limitations, but width will not scale with height growth and limitations)
-
----
 
 **`.imageData`** - `void *`
 
@@ -1288,7 +1310,7 @@ Used to perform **aspect ratio scaling** on the image element. As of this versio
 // Load an image somewhere in your code
 YourImage profilePicture = LoadYourImage("profilePicture.png");
 // Note that when rendering, .imageData will be void* type.
-CLAY({ .image = { .imageData = &profilePicture, .sourceDimensions = { 60, 60 } } }) {}
+CLAY({ .image = { .imageData = &profilePicture } }) {}
 ```
 
 **Examples**
@@ -1297,11 +1319,11 @@ CLAY({ .image = { .imageData = &profilePicture, .sourceDimensions = { 60, 60 } }
 // Load an image somewhere in your code
 YourImage profilePicture = LoadYourImage("profilePicture.png");
 // Declare a reusable image config
-Clay_ImageElementConfig imageConfig = (Clay_ImageElementConfig) { .imageData = &profilePicture, .sourceDimensions = {60, 60} };
+Clay_ImageElementConfig imageConfig = (Clay_ImageElementConfig) { .imageData = &profilePicture };
 // Declare an image element using a reusable config
 CLAY({ .image = imageConfig }) {}
 // Declare an image element using an inline config
-CLAY({ .image = { .imageData = &profilePicture, .sourceDimensions = {60, 60} } }) {}
+CLAY({ .image = { .imageData = &profilePicture }, .aspectRatio = 16.0 / 9.0 }) {}
 // Rendering example
 YourImage *imageToRender = renderCommand->elementConfig.imageElementConfig->imageData;
 ```
@@ -1312,22 +1334,116 @@ Element is subject to [culling](#visibility-culling). Otherwise, a single `Clay_
 
 ---
 
-### Clay_ScrollElementConfig
+### Clay_AspectRatioElementConfig
 
 **Usage**
 
-`CLAY({ .scroll = { ...scroll config } }) {}`
+`CLAY({ .aspectRatio = 16.0 / 9.0 }) {}`
+
+**Clay_AspectRatioElementConfig** configures a clay element to enforce a fixed width / height ratio in its final dimensions. Mostly used for image elements, but can also be used for non image elements.
+
+**Struct API (Pseudocode)**
+
+```C
+Clay_AspectRatioElementConfig {
+    float aspectRatio;
+};
+```
+
+**Fields**
+
+**`.aspectRatio`** - `float`
+
+`CLAY({ .aspectRatio = { .aspectRatio = 16.0 / 9.0 } }) {}`
+
+or alternatively, as C will automatically pass the value to the first nested struct field:
+
+`CLAY({ .aspectRatio = 16.0 / 9.0 }) {}`
+
+**Examples**
+
+```C
+// Load an image somewhere in your code
+YourImage profilePicture = LoadYourImage("profilePicture.png");
+// Declare an image element that will grow along the X axis while maintaining its original aspect ratio
+CLAY({
+    .layout = { .width = CLAY_SIZING_GROW() },
+    .aspectRatio = profilePicture.width / profilePicture.height,
+    .image = { .imageData = &profilePicture },
+}) {}
+```
+
+---
+
+### Clay_ImageElementConfig
+**Usage**
+
+`CLAY({ .image = { ...image config } }) {}`
+
+**Clay_ImageElementConfig** configures a clay element to render an image as its background.
+
+**Struct API (Pseudocode)**
+
+```C
+Clay_ImageElementConfig {
+    void * imageData;
+};
+```
+
+**Fields**
+
+**`.imageData`** - `void *`
+
+`CLAY({ .image = { .imageData = &myImage } }) {}`
+
+`.imageData` is a generic void pointer that can be used to pass through image data to the renderer.
+
+```C
+// Load an image somewhere in your code
+YourImage profilePicture = LoadYourImage("profilePicture.png");
+// Note that when rendering, .imageData will be void* type.
+CLAY({ .image = { .imageData = &profilePicture } }) {}
+```
+
+Note: for an image to maintain its original aspect ratio when using dynamic scaling, the [.aspectRatio](#clay_aspectratioelementconfig) config option must be used.
+
+**Examples**
+
+```C
+// Load an image somewhere in your code
+YourImage profilePicture = LoadYourImage("profilePicture.png");
+// Declare a reusable image config
+Clay_ImageElementConfig imageConfig = (Clay_ImageElementConfig) { .imageData = &profilePicture };
+// Declare an image element using a reusable config
+CLAY({ .image = imageConfig }) {}
+// Declare an image element using an inline config
+CLAY({ .image = { .imageData = &profilePicture }, .aspectRatio = 16.0 / 9.0 }) {}
+// Rendering example
+YourImage *imageToRender = renderCommand->elementConfig.imageElementConfig->imageData;
+```
+
+**Rendering**
+
+Element is subject to [culling](#visibility-culling). Otherwise, a single `Clay_RenderCommand`s with `commandType = CLAY_RENDER_COMMAND_TYPE_IMAGE` will be created. The user will need to access `renderCommand->renderData.image->imageData` to retrieve image data referenced during layout creation. It's also up to the user to decide how / if they wish to blend `renderCommand->renderData.image->backgroundColor` with the image.
+
+---
+
+### Clay_ClipElementConfig
+
+**Usage**
+
+`CLAY({ .clip = { ...clip config } }) {}`
 
 **Notes**
 
-`Clay_ScrollElementConfig` configures the element as a scrolling container, enabling masking of children that extend beyond its boundaries.
+`Clay_ClipElementConfig` configures the element as a clipping container, enabling masking of children that extend beyond its boundaries.
 
 Note: In order to process scrolling based on pointer position and mouse wheel or touch interactions, you must call `Clay_SetPointerState()` and `Clay_UpdateScrollContainers()` _before_ calling `BeginLayout`.
 
 **Struct Definition (Pseudocode)**
 
 ```C
-Clay_ScrollElementConfig {
+Clay_ClipElementConfig {
     bool horizontal;
     bool vertical;
 };
@@ -1337,30 +1453,30 @@ Clay_ScrollElementConfig {
 
 **`.horizontal`** - `bool`
 
-`CLAY({ .scroll = { .horizontal = true } })`
+`CLAY({ .clip = { .horizontal = true } })`
 
-Enables or disables horizontal scrolling for this container element.
+Enables or disables horizontal clipping for this container element.
 
 ---
 
 **`.vertical`** - `bool`
 
-`CLAY({ .scroll = { .vertical = true } })`
+`CLAY({ .clip = { .vertical = true } })`
 
-Enables or disables vertical scrolling for this container element.
+Enables or disables vertical clipping for this container element.
 
 ---
 
 **Rendering**
 
-Enabling scroll for an element will result in two additional render commands: 
+Enabling clip for an element will result in two additional render commands: 
 - `commandType = CLAY_RENDER_COMMAND_TYPE_SCISSOR_START`, which should create a rectangle mask with its `boundingBox` and is **not** subject to [culling](#visibility-culling)
 - `commandType = CLAY_RENDER_COMMAND_TYPE_SCISSOR_END`, which disables the previous rectangle mask and is **not** subject to [culling](#visibility-culling)
 
 **Examples**
 
 ```C
-CLAY({ .scroll = { .vertical = true } }) {
+CLAY({ .clip = { .vertical = true } }) {
     // Create child content with a fixed height of 5000
     CLAY({ .id = CLAY_ID("ScrollInner"), .layout = { .sizing = { .height = CLAY_SIZING_FIXED(5000) } } }) {}
 }
@@ -1787,7 +1903,8 @@ Note: when using the debug tools, their internal colors are represented as 0-255
 
 ```C
 typedef struct {
-    int length;
+    bool isStaticallyAllocated;
+    int32_t length;
     const char *chars;
 } Clay_String;
 ```
@@ -1796,7 +1913,14 @@ typedef struct {
 
 **Fields**
 
-**`.length`** - `int`
+**`.isStaticallyAllocated`** - `bool`
+
+Whether or not the string is statically allocated, or in other words, whether
+or not it lives for the entire lifetime of the program.
+
+---
+
+**`.length`** - `int32_t`
 
 The number of characters in the string, _not including an optional null terminator._
 
@@ -1979,7 +2103,6 @@ typedef struct {
 typedef struct {
     Clay_Color backgroundColor;
     Clay_CornerRadius cornerRadius;
-    Clay_Dimensions sourceDimensions;
     void* imageData;
 } Clay_ImageRenderData;
 ```
@@ -2023,22 +2146,10 @@ typedef struct {
     // The outer dimensions of the inner scroll container content, including the padding of the parent scroll container.
     Clay_Dimensions contentDimensions;
     // The config that was originally passed to the scroll element.
-    Clay_ScrollElementConfig config;
+    Clay_ClipElementConfig config;
     // Indicates whether an actual scroll container matched the provided ID or if the default struct was returned.
     bool found;
 } Clay_ScrollContainerData;
-```
-
-### Clay_ElementData
-
-```C
-// Bounding box and other data for a specific UI element.
-typedef struct {
-    // The rectangle that encloses this UI element, with the position relative to the root of the layout.
-    Clay_BoundingBox boundingBox;
-    // Indicates whether an actual Element matched the provided ID or if the default struct was returned.
-    bool found;
-} Clay_ElementData;
 ```
 
 **Fields**
@@ -2073,9 +2184,41 @@ Dimensions representing the inner width and height of the content _inside_ the s
 
 ---
 
-**`.config`** - `Clay_ScrollElementConfig`
+**`.config`** - `Clay_ClipElementConfig`
 
-The [Clay_ScrollElementConfig](#clay_scroll) for the matching scroll container element.
+The [Clay_ClipElementConfig](#clay_scroll) for the matching scroll container element.
+
+---
+
+### Clay_ElementData
+
+```C
+// Bounding box and other data for a specific UI element.
+typedef struct {
+    // The rectangle that encloses this UI element, with the position relative to the root of the layout.
+    Clay_BoundingBox boundingBox;
+    // Indicates whether an actual Element matched the provided ID or if the default struct was returned.
+    bool found;
+} Clay_ElementData;
+```
+
+**Fields**
+
+**`.boundingBox`** - `Clay_BoundingBox`
+
+```C
+typedef struct {
+    float x, y, width, height;
+} Clay_BoundingBox;
+```
+
+A rectangle representing the bounding box of this render command, with `.x` and `.y` representing the top left corner of the element.
+
+---
+
+**`.found`** - `bool`
+
+A boolean representing whether or not the ID passed to [Clay_GetElementData](#clay_getelementdata) matched a valid element or not. In the case that `.found` is `false`, `.boundingBox` will be the default value (zeroed).
 
 ---
 

@@ -88,7 +88,7 @@ void Layout() {
                         .childAlignment = { CLAY_ALIGN_X_CENTER, CLAY_ALIGN_Y_CENTER }},
                         .border = { .color = PRIMARY, .width = 2, 2, 2, 2 }, .cornerRadius = 10
                     }) {
-						CLAY({ .layout = { .sizing = { CLAY_SIZING_FIXED(32), CLAY_SIZING_FIXED(32) } }, .image = { .sourceDimensions = { 32, 32 }, .imageData = "resources/check.png" }});
+						CLAY({ .layout = { .sizing = { CLAY_SIZING_FIXED(32), CLAY_SIZING_FIXED(32) } }, .image = { .imageData = "resources/check.png" }});
 					}
 				}
 			}
@@ -145,7 +145,7 @@ int main(void) {
         "Quicksand Semibold"
     };
 
-    Clay_SetMeasureTextFunction(Clay_Cairo_MeasureText, (uintptr_t)fonts);
+    Clay_SetMeasureTextFunction(Clay_Cairo_MeasureText, fonts);
 
 	Clay_BeginLayout();
 
